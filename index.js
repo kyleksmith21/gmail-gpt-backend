@@ -1,45 +1,50 @@
 const express = require('express');
 const { google } = require('googleapis');
 const dotenv = require('dotenv');
-const open = require('open').default;
 
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// OAuth2 client setup
+// Set up the Google OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
   process.env.CLIENT_ID,
   process.env.CLIENT_SECRET,
-  process.env.REDIRECT_URI
+  process.env.REDIRECT_URI // e.g. https://your-app.onrender.com/oauth2callback
 );
 
-// Step 1: Redirect user to Google OAuth
-app.get('/auth', async (req, res) => {
+// 🔐 Step 1: Begin OAuth flow
+app.get('/auth', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
-  access_type: 'offline',     // this tells Google we want a refresh token
-  prompt: 'consent',          // this forces Google to re-prompt the user
-  scope: ['https://www.googleapis.com/auth/gmail.readonly']
-});
-  await open(authUrl);
-  res.send('Opened browser for Gmail authorization');
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/gmail.readonly']
+  });
+
+  // Redirect the user to Google's OAuth consent screen
+  res.redirect(authUrl);
 });
 
-// Step 2: OAuth callback handler
+// 🔁 Step 2: Handle OAuth callback and capture refresh token
 app.get('/oauth2callback', async (req, res) => {
   try {
-    const code = req.query.code;
+    const { code } = req.query;
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
-    res.send('Authorization complete. You can now query emails using the /emails endpoint.');
+    // ⛳️ Log the refresh token (you should store this securely or add it to your Render env vars)
+    if (tokens.refresh_token) {
+      console.log("✅ Your refresh token:", tokens.refresh_token);
+    }
+
+    res.send('✅ Authorization complete. You can now query emails using the /emails endpoint.');
   } catch (err) {
     console.error('OAuth error:', err);
-    res.status(500).send('OAuth failed.');
+    res.status(500).send('❌ OAuth failed.');
   }
 });
 
-// ✅ Secure GPT-accessible email search endpoint
+// 📬 Step 3: Gmail email search endpoint (GPT calls this)
 app.get('/emails', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   const query = req.query.q || '';
@@ -53,8 +58,8 @@ app.get('/emails', async (req, res) => {
 
     const listRes = await gmail.users.messages.list({
       userId: 'me',
-      q: query, // e.g., from:someone@gmail.com subject:invoice
-      maxResults: 10,
+      q: query,
+      maxResults: 10
     });
 
     const messageIds = listRes.data.messages || [];
@@ -64,15 +69,17 @@ app.get('/emails', async (req, res) => {
         const msgRes = await gmail.users.messages.get({
           userId: 'me',
           id: msg.id,
-          format: 'full',
+          format: 'full'
         });
+
+        const headers = msgRes.data.payload?.headers || [];
 
         return {
           id: msg.id,
           snippet: msgRes.data.snippet,
-          subject: msgRes.data.payload?.headers?.find(h => h.name === 'Subject')?.value,
-          from: msgRes.data.payload?.headers?.find(h => h.name === 'From')?.value,
-          date: msgRes.data.payload?.headers?.find(h => h.name === 'Date')?.value,
+          subject: headers.find(h => h.name === 'Subject')?.value || '',
+          from: headers.find(h => h.name === 'From')?.value || '',
+          date: headers.find(h => h.name === 'Date')?.value || ''
         };
       })
     );
@@ -84,7 +91,7 @@ app.get('/emails', async (req, res) => {
   }
 });
 
-// Start server
+// 🚀 Start server
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
 });
