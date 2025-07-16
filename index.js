@@ -17,9 +17,10 @@ const oauth2Client = new google.auth.OAuth2(
 // Step 1: Redirect user to Google OAuth
 app.get('/auth', async (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/gmail.readonly'],
-  });
+  access_type: 'offline',     // this tells Google we want a refresh token
+  prompt: 'consent',          // this forces Google to re-prompt the user
+  scope: ['https://www.googleapis.com/auth/gmail.readonly']
+});
   await open(authUrl);
   res.send('Opened browser for Gmail authorization');
 });
